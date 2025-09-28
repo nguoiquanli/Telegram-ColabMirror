@@ -2,6 +2,8 @@
 
 
 import logging, os
+os.environ.setdefault("XDG_RUNTIME_DIR","/tmp")
+os.environ.setdefault("SDL_AUDIODRIVER","dummy")
 from pyrogram import filters
 from datetime import datetime
 from asyncio import sleep, get_event_loop
@@ -89,14 +91,14 @@ async def ytd_command(client, message):
                                [InlineKeyboardButton("Upload lên Filebin", callback_data="dest_fb")]])
     await message.reply_text("Chọn nơi upload:", reply_markup=kb, quote=True)
 
-@colab_bot.on_message((filters.command("settings")) & (filters.private | filters.group) & ~filters.channel)
+@colab_bot.on_message(filters.command("settings") & filters.group)
 async def settings(client, message):
     if message.chat.id == OWNER:
         await message.delete()
         await send_settings(client, message, message.id, True)
 
 
-@colab_bot.on_message(filters.reply)
+@colab_bot.on_message(filters.reply & filters.group)
 async def setPrefix(client, message):
     global BOT, SETTING
     if BOT.State.prefix:
@@ -137,7 +139,7 @@ async def handle_image(client, message):
     await message_deleter(message, msg)
 
 
-@colab_bot.on_message((filters.command("setname")) & (filters.private | filters.group) & ~filters.channel)
+@colab_bot.on_message(filters.command("setname") & filters.group)
 async def custom_name(client, message):
     global BOT
     if len(message.command) != 2:
@@ -155,7 +157,7 @@ async def custom_name(client, message):
     await message_deleter(message, msg)
 
 
-@colab_bot.on_message((filters.command("zipaswd")) & (filters.private | filters.group) & ~filters.channel)
+@colab_bot.on_message(filters.command("zipaswd") & filters.group)
 async def zip_pswd(client, message):
     global BOT
     if len(message.command) != 2:
@@ -173,7 +175,7 @@ async def zip_pswd(client, message):
     await message_deleter(message, msg)
 
 
-@colab_bot.on_message((filters.command("unzipaswd")) & (filters.private | filters.group) & ~filters.channel)
+@colab_bot.on_message(filters.command("unzipaswd") & filters.group)
 async def unzip_pswd(client, message):
     global BOT
     if len(message.command) != 2:

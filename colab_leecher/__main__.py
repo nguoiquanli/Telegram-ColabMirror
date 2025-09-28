@@ -17,7 +17,7 @@ src_request_msg = None
 PENDING = {}  # (chat_id, msg_id) -> {'type': 'link'|'tg_media', 'data': [...]/message_id, 'ytdl': bool}
 
 
-@colab_bot.on_message(filters.command("start") & filters.group)
+@colab_bot.on_message((filters.command("start")) & (filters.private | filters.group) & ~filters.channel)
 async def start(client, message):
     await message.delete()
     text = "**Hey There, 👋🏼 It's Colab Leecher**\n\n◲ I am a Powerful File Transloading Bot 🚀\n◲ I can Transfer Files to Telegram or Filebin From Various Sources 🦐"
@@ -38,28 +38,22 @@ async def start(client, message):
 @colab_bot.on_message(filters.command("tupload") & filters.group)
 async def telegram_upload(client, message):
     from .utility.variables import BOT
+    from .utility.task_manager import taskScheduler
     args = message.text.split(maxsplit=1)
     if len(args) >= 2:
         BOT.Mode.mode = "leech"
         BOT.Mode.ytdl = False
         BOT.Mode.dest = "telegram"
+        BOT.Mode.type = "normal"
         BOT.SOURCE = [args[1].strip()]
-        # Show processing type selection
-        kb = InlineKeyboardMarkup([
-            [InlineKeyboardButton("Regular", callback_data="normal")],
-            [InlineKeyboardButton("Compress", callback_data="zip"), InlineKeyboardButton("Extract", callback_data="unzip")],
-            [InlineKeyboardButton("UnDoubleZip", callback_data="undzip")],
-        ])
-        await message.reply_text("Chọn kiểu xử lý trước khi upload:", reply_markup=kb, quote=True)
+        await taskScheduler()
         return
-    # If replying to a file, tell it is already on Telegram
     if message.reply_to_message and (message.reply_to_message.document or message.reply_to_message.video or message.reply_to_message.audio):
         await message.reply_text("📎 File đang ở Telegram sẵn rồi — không cần /tupload.", quote=True)
         return
     await message.reply_text("Dùng: `/tupload https://link` hoặc gửi link rồi chọn nơi upload.", quote=True)
 
-@colab_bot.on_message(filters.command("help") & filters.group)
-async def help_command(client, message):
+def help_command(client, message):
     msg = await message.reply_text(
         "Send /start To Check If I am alive 🤨\n\nSend /colabxr and follow prompts to start transloading 🚀\n\nSend /settings to edit bot settings ⚙️\n\nSend /setname To Set Custom File Name 📛\n\nSend /zipaswd To Set Password For Zip File 🔐\n\nSend /unzipaswd To Set Password to Extract Archives 🔓\n\n⚠️ **You can ALWAYS SEND an image To Set it as THUMBNAIL for your files 🌄**",
         quote=True,

@@ -133,8 +133,10 @@ async def taskScheduler():
     Messages.link_p = str(DUMP_ID)[4:]
 
     try:
-        system(f"aria2c -d {Paths.WORK_PATH} -o Hero.jpg {Aria2c.pic_dwn_url}")
+        if getattr(MSG, "status_msg", None) and getattr(MSG.status_msg, "_client", None):
+            await MSG.status_msg.delete()
     except Exception:
+        pass
         Paths.HERO_IMAGE = Paths.DEFAULT_HERO
 
     MSG.sent_msg = await colab_bot.send_message(chat_id=DUMP_ID, text=src_text[0])
@@ -147,10 +149,10 @@ async def taskScheduler():
     Messages.task_msg += f"__[{BOT.Mode.type.capitalize()} {BOT.Mode.mode.capitalize()} as {BOT.Setting.stream_upload}]({Messages.src_link})__\n\n"
 
     try:
-            if getattr(MSG.status_msg, "_client", None):
-                await MSG.status_msg.delete()
-        except Exception:
-            pass
+        if getattr(MSG, "status_msg", None) and getattr(MSG.status_msg, "_client", None):
+            await MSG.status_msg.delete()
+    except Exception:
+        pass
     img = Paths.THMB_PATH if ospath.exists(Paths.THMB_PATH) else Paths.HERO_IMAGE
     MSG.status_msg = await colab_bot.send_photo(  # type: ignore
         chat_id=OWNER,

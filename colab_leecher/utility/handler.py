@@ -135,10 +135,9 @@ async def Leech(folder_path: str, remove: bool):
 
 
 async def upload_dispatch(file_path: str, file_name: str):
-    """Dispatch upload to Telegram or Filebin based on BOT.Mode.dest"""
+    # Route upload destination
     if BOT.Mode.dest == "filebin":
         link = await upload_to_filebin(file_path)
-        # Send a markdown link with a button to open in browser
         btn = InlineKeyboardMarkup([[InlineKeyboardButton("Mở link tải", url=link)]])
         await MSG.sent_msg.reply_text(f"[📦 Tải về]({link})", disable_web_page_preview=True, reply_markup=btn)
     else:

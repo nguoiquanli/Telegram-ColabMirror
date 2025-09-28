@@ -1,6 +1,5 @@
 
-# Simple Filebin uploader using aiohttp
-import os, aiohttp, asyncio
+import os, aiohttp
 BIN_ID = None
 
 async def _ensure_bin(session):
@@ -13,7 +12,6 @@ async def _ensure_bin(session):
         return BIN_ID
 
 async def upload_to_filebin(file_path: str) -> str:
-    """Uploads a file to Filebin and returns the public download URL."""
     global BIN_ID
     async with aiohttp.ClientSession() as session:
         await _ensure_bin(session)
@@ -21,7 +19,6 @@ async def upload_to_filebin(file_path: str) -> str:
         url = f"https://filebin.net/api/bin/{BIN_ID}/{name}"
         async with session.put(url, data=open(file_path, "rb")) as r:
             if r.status in (400, 415, 406):
-                # Try appending .bin when blocked by extension policy
                 name = name + ".bin"
                 url = f"https://filebin.net/api/bin/{BIN_ID}/{name}"
                 async with session.put(url, data=open(file_path, "rb")) as r2:

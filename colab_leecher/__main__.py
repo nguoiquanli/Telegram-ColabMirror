@@ -58,7 +58,8 @@ async def telegram_upload(client, message):
         return
     await message.reply_text("Dùng: `/tupload https://link` hoặc gửi link rồi chọn nơi upload.", quote=True)
 
-def help_command(client, message):
+@colab_bot.on_message(filters.command("help") & filters.group)
+async def help_command(client, message):
     msg = await message.reply_text(
         "Send /start To Check If I am alive 🤨\n\nSend /colabxr and follow prompts to start transloading 🚀\n\nSend /settings to edit bot settings ⚙️\n\nSend /setname To Set Custom File Name 📛\n\nSend /zipaswd To Set Password For Zip File 🔐\n\nSend /unzipaswd To Set Password to Extract Archives 🔓\n\n⚠️ **You can ALWAYS SEND an image To Set it as THUMBNAIL for your files 🌄**",
         quote=True,
@@ -89,7 +90,7 @@ def help_command(client, message):
 
 logging.info("Colab Leecher Started !")
 colab_bot.run()
-@colab_bot.on_message(filters.media & filters.group)
+@colab_bot.on_message((filters.document | filters.video | filters.audio) & filters.group)
 async def incoming_media(client, message):
     # Prompt for destination when a file is sent without command
     from pyrogram.types import InlineKeyboardMarkup, InlineKeyboardButton

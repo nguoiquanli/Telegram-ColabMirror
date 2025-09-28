@@ -1,322 +1,416 @@
-# copyright 2023 © Xron Trix | https://github.com/Xrontrix10
+# copyright 2024 © Xron Trix | https://github.com/Xrontrix10
 
 
 import os
-import shutil
+import math
+import psutil
 import logging
-import pathlib
-from asyncio import sleep
 from time import time
-from colab_leecher import OWNER, colab_bot
-from natsort import natsorted
+from PIL import Image
+from os import path as ospath
 from datetime import datetime
-from os import makedirs, path as ospath
-from colab_leecher.uploader.telegram import upload_file
-from colab_leecher.uploader.filebin import upload_to_filebin
-from pyrogram.types import InlineKeyboardButton, InlineKeyboardMarkup
-from pyrogram.types import InlineKeyboardButton, InlineKeyboardMarkup
+from urllib.parse import urlparse
+from asyncio import get_event_loop
+from colab_leecher import colab_bot
+from pyrogram.errors import BadRequest
+from moviepy.video.io.VideoFileClip import VideoFileClip
+from pyrogram.types import InlineKeyboardButton, InlineKeyboardMarkup, InputMediaPhoto
 from colab_leecher.utility.variables import (
     BOT,
     MSG,
     BotTimes,
     Messages,
     Paths,
-    Transfer,
-)
-from colab_leecher.utility.converters import (
-    archive,
-    extract,
-    videoConverter,
-    sizeChecker,
-)
-from colab_leecher.utility.helper import (
-    fileType,
-    getSize,
-    getTime,
-    keyboard,
-    shortFileName,
-    sizeUnit,
-    sysINFO,
 )
 
 
-async def Leech(folder_path: str, remove: bool):
-    global BOT, BotTimes, Messages, Paths, Transfer
-    files = [str(p) for p in pathlib.Path(folder_path).glob("**/*") if p.is_file()]
-    for f in natsorted(files):
-        file_path = ospath.join(folder_path, f)
+def isLink(_, __, update):
+    if update.text:
+        if "/content/" in str(update.text) or "/home" in str(update.text):
+            return True
+        elif update.text.startswith("magnet:?xt=urn:btih:"):
+            return True
 
-        # Converting Video Files
-        if BOT.Options.convert_video and fileType(file_path) == "video":
-            file_path = await videoConverter(file_path)
+        parsed = urlparse(update.text)
 
-    Transfer.total_down_size = getSize(folder_path)
+        if parsed.scheme in ("http", "https") and parsed.netloc:
+            return True
 
-    files = [str(p) for p in pathlib.Path(folder_path).glob("**/*") if p.is_file()]
-    for f in natsorted(files):
-        file_path = ospath.join(folder_path, f)
-
-        leech = await sizeChecker(file_path, remove)
-
-        if leech:  # File was splitted
-            if ospath.exists(file_path) and remove:
-                os.remove(file_path)  # Delete original Big Zip file
-
-            dir_list = natsorted(os.listdir(Paths.temp_zpath))
-
-            count = 1
-
-            for dir_path in dir_list:
-                short_path = ospath.join(Paths.temp_zpath, dir_path)
-                file_name = ospath.basename(short_path)
-                new_path = shortFileName(short_path)
-                os.rename(short_path, new_path)
-                BotTimes.current_time = time()
-                Messages.status_head = f"<b>📤 UPLOADING SPLIT » {count} OF {len(dir_list)} Files</b>\n\n<code>{file_name}</code>\n"
-                try:
-                    MSG.status_msg = await MSG.status_msg.edit_text(
-                        text=Messages.task_msg
-                        + Messages.status_head
-                        + "\n⏳ __Starting.....__"
-                        + sysINFO(),
-                        reply_markup=keyboard(),
-                    )
-                except Exception as d:
-                    logging.info(d)
-                await upload_dispatch(new_path, file_name)
-                Transfer.up_bytes.append(os.stat(new_path).st_size)
-
-                count += 1
-
-            shutil.rmtree(Paths.temp_zpath)
-
-        else:
-            if not ospath.exists(Paths.temp_files_dir): # Create Directory
-                makedirs(Paths.temp_files_dir)
-
-            if not remove:  # Copy To Temp Dir for Renaming Purposes
-                file_path = shutil.copy(file_path, Paths.temp_files_dir)
-            file_name = ospath.basename(file_path)
-            # Trimming filename upto 50 chars
-            new_path = shortFileName(file_path)
-            os.rename(file_path, new_path)
-            BotTimes.current_time = time()
-            Messages.status_head = (
-                f"<b>📤 UPLOADING » </b>\n\n<code>{file_name}</code>\n"
-            )
-            try:
-                MSG.status_msg = await MSG.status_msg.edit_text(
-                    text=Messages.task_msg
-                    + Messages.status_head
-                    + "\n⏳ __Starting.....__"
-                    + sysINFO(),
-                    reply_markup=keyboard(),
-                )
-            except Exception as d:
-                logging.error(f"Error updating status bar: {d}")
-            file_size = os.stat(new_path).st_size
-            await upload_dispatch(new_path, file_name)
-            Transfer.up_bytes.append(file_size)
-
-            if remove:
-                if ospath.exists(new_path):
-                    os.remove(new_path)
-            else:
-                for file in os.listdir(Paths.temp_files_dir):
-                    os.remove(ospath.join(Paths.temp_files_dir, file))
-
-    if remove and ospath.exists(folder_path):
-        shutil.rmtree(folder_path)
-    if ospath.exists(Paths.thumbnail_ytdl):
-        shutil.rmtree(Paths.thumbnail_ytdl)
-    if ospath.exists(Paths.temp_files_dir):
-        shutil.rmtree(Paths.temp_files_dir)
+    return False
 
 
+def is_google_drive(link):
+    return "drive.google.com" in link
 
-async def upload_dispatch(file_path: str, file_name: str):
-    """Dispatch upload to Telegram or Filebin based on BOT.Mode.dest"""
-    if BOT.Mode.dest == "filebin":
-        link = await upload_to_filebin(file_path)
-        # Send a markdown link with a button to open in browser
-        btn = InlineKeyboardMarkup([[InlineKeyboardButton("Mở link tải", url=link)]])
-        await MSG.sent_msg.reply_text(f"[📦 Tải về]({link})", disable_web_page_preview=True, reply_markup=btn)
+def is_mega(link):
+    return "mega.nz" in link
+
+def is_terabox(link):
+    return "terabox" in link or "1024tera" in link
+
+def is_ytdl_link(link):
+    return "youtube.com" in link or "youtu.be" in link
+
+def is_telegram(link):
+    return "t.me" in link
+
+def is_torrent(link):
+    return "magnet" in link or "torrent" in link
+
+
+def getTime(seconds):
+    seconds = int(seconds)
+    days = seconds // (24 * 3600)
+    seconds = seconds % (24 * 3600)
+    hours = seconds // 3600
+    seconds %= 3600
+    minutes = seconds // 60
+    seconds %= 60
+
+    if days > 0:
+        return f"{days}d {hours}h {minutes}m {seconds}s"
+    elif hours > 0:
+        return f"{hours}h {minutes}m {seconds}s"
+    elif minutes > 0:
+        return f"{minutes}m {seconds}s"
     else:
-        await upload_file(file_path, file_name)
-async def Zip_Handler(down_path: str, is_split: bool, remove: bool):
-    global BOT, Messages, MSG, Transfer
+        return f"{seconds}s"
 
-    Messages.status_head = (
-        f"<b>🔐 ZIPPING » </b>\n\n<code>{Messages.download_name}</code>\n"
-    )
 
+def sizeUnit(size):
+    if size > 1024 * 1024 * 1024 * 1024 * 1024:
+        siz = f"{size/(1024**5):.2f} PiB"
+    elif size > 1024 * 1024 * 1024 * 1024:
+        siz = f"{size/(1024**4):.2f} TiB"
+    elif size > 1024 * 1024 * 1024:
+        siz = f"{size/(1024**3):.2f} GiB"
+    elif size > 1024 * 1024:
+        siz = f"{size/(1024**2):.2f} MiB"
+    elif size > 1024:
+        siz = f"{size/1024:.2f} KiB"
+    else:
+        siz = f"{size:.2f} B"
+    return siz
+
+
+def fileType(file_path: str):
+    extensions_dict = {
+        ".mp4": "video",
+        ".avi": "video",
+        ".mkv": "video",
+        ".m2ts": "video",
+        ".mov": "video",
+        ".ts": "video",
+        ".m3u8": "video",
+        ".webm": "video",
+        ".mpg": "video",
+        ".mpeg": "video",
+        ".mpeg4": "video",
+        ".vob": "video",
+        ".m4v": "video",
+        ".mp3": "audio",
+        ".wav": "audio",
+        ".flac": "audio",
+        ".aac": "audio",
+        ".ogg": "audio",
+        ".jpg": "photo",
+        ".jpeg": "photo",
+        ".png": "photo",
+        ".bmp": "photo",
+        ".gif": "photo",
+    }
+    _, extension = ospath.splitext(file_path)
+
+    if extension.lower() in extensions_dict:
+        return extensions_dict[extension.lower()]
+    else:
+        return "document"
+
+
+def shortFileName(path):
+    if ospath.isfile(path):
+        dir_path, filename = ospath.split(path)
+        if len(filename) > 60:
+            basename, ext = ospath.splitext(filename)
+            basename = basename[: 60 - len(ext)]
+            filename = basename + ext
+            path = ospath.join(dir_path, filename)
+        return path
+    elif ospath.isdir(path):
+        dir_path, dirname = ospath.split(path)
+        if len(dirname) > 60:
+            dirname = dirname[:60]
+            path = ospath.join(dir_path, dirname)
+        return path
+    else:
+        if len(path) > 60:
+            path = path[:60]
+        return path
+
+
+def getSize(path):
+    if ospath.isfile(path):
+        return ospath.getsize(path)
+    else:
+        total_size = 0
+        for dirpath, _, filenames in os.walk(path):
+            for f in filenames:
+                fp = ospath.join(dirpath, f)
+                total_size += ospath.getsize(fp)
+        return total_size
+
+
+def videoExtFix(file_path: str):
+    _, f_name = ospath.split(file_path)
+    if f_name.endswith(".mp4") or f_name.endswith(".mkv"):
+        return file_path
+    else:
+        os.rename(file_path, ospath.join(file_path + ".mp4"))
+        return ospath.join(file_path + ".mp4")
+
+
+def thumbMaintainer(file_path):
+    if ospath.exists(Paths.VIDEO_FRAME):
+        os.remove(Paths.VIDEO_FRAME)
     try:
-        MSG.status_msg = await MSG.status_msg.edit_text(
-            text=Messages.task_msg + Messages.status_head + sysINFO(),
-            reply_markup=keyboard(),
-        )
-    except Exception as e2:
-        logging.error(f"Problem in ZipLeech !{e2}")
-
-    logging.info("\nNow ZIPPING the folder...")
-    BotTimes.current_time = time()
-    if not ospath.exists(Paths.temp_zpath):
-        makedirs(Paths.temp_zpath)
-    await archive(down_path, is_split, remove)
-
-    await sleep(2)  # Time for renmaing newly created archives
-
-    Transfer.total_down_size = getSize(Paths.temp_zpath)
-
-    if remove and ospath.exists(down_path):
-        shutil.rmtree(down_path)
+        fname, _ = ospath.splitext(ospath.basename(file_path))
+        ytdl_thmb = f"{Paths.WORK_PATH}/ytdl_thumbnails/{fname}.webp"
+        with VideoFileClip(file_path) as video:
+            if ospath.exists(Paths.THMB_PATH):
+                return Paths.THMB_PATH, video.duration
+            elif ospath.exists(ytdl_thmb):
+                return convertIMG(ytdl_thmb), video.duration
+            else:
+                video.save_frame(Paths.VIDEO_FRAME, t=math.floor(video.duration / 2))
+                return Paths.VIDEO_FRAME, video.duration
+    except Exception as e:
+        print(f"Thmb Gen ERROR: {e}")
+        if ospath.exists(Paths.THMB_PATH):
+            return Paths.THMB_PATH, 0
+        return Paths.HERO_IMAGE, 0
 
 
-async def Unzip_Handler(down_path: str, remove: bool):
-    global MSG, Messages
-
-    Messages.status_head = (
-        f"\n<b>📂 EXTRACTING » </b>\n\n<code>{Messages.download_name}</code>\n"
-    )
-
-    MSG.status_msg = await MSG.status_msg.edit_text(
-        text=Messages.task_msg
-        + Messages.status_head
-        + "\n⏳ __Starting.....__"
-        + sysINFO(),
-        reply_markup=keyboard(),
-    )
-    filenames = [str(p) for p in pathlib.Path(down_path).glob("**/*") if p.is_file()]
-    for f in natsorted(filenames):
-        short_path = ospath.join(down_path, f)
-        if not ospath.exists(Paths.temp_unzip_path):
-            makedirs(Paths.temp_unzip_path)
-        filename = ospath.basename(f).lower()
-        _, ext = ospath.splitext(filename)
-        try:
-            if ospath.exists(short_path):
-                if ext in [".7z", ".gz", ".zip", ".rar", ".001", ".tar", ".z01"]:
-                    await extract(short_path, remove)
-                else:
-                    shutil.copy(short_path, Paths.temp_unzip_path)
-        except Exception as e5:
-            logging.error(f"UZLeech Launcher Exception: {e5}")
-
-    if remove:
-        shutil.rmtree(down_path)
-
-
-async def cancelTask(Reason: str):
-    text = f"#TASK_STOPPED\n\n**╭🔗 Source » **__[Here]({Messages.src_link})__\n**├🦄 Mode » **__{BOT.Mode.mode.capitalize()}__\n**├🤔 Reason » **__{Reason}__\n**╰🍃 Spent Time » **__{getTime((datetime.now() - BotTimes.start_time).seconds)}__"
-    if BOT.State.task_going:
-        try:
-            BOT.TASK.cancel()  # type: ignore
-            shutil.rmtree(Paths.WORK_PATH)
-        except Exception as e:
-            logging.error(f"Error Deleting Task Folder: {e}")
-        else:
-            logging.info(f"On-Going Task Cancelled !")
-        finally:
-            BOT.State.task_going = False
-            await MSG.status_msg.delete()
-            await colab_bot.send_message(
-                chat_id=OWNER,
-                text=text,
-                reply_markup=InlineKeyboardMarkup(
-                    [
-                        [
-                            InlineKeyboardButton(  # Opens a web URL
-                                "Channel 📣",
-                                url="https://t.me/Colab_Leecher",
-                            ),
-                            InlineKeyboardButton(  # Opens a web URL
-                                "Group 💬",
-                                url="https://t.me/Colab_Leecher_Discuss",
-                            ),
-                        ],
-                    ]
-                ),
+async def setThumbnail(message):
+    global SETTING
+    try:
+        if ospath.exists(Paths.THMB_PATH):
+            os.remove(Paths.THMB_PATH)
+        event_loop = get_event_loop()
+        th_set = event_loop.create_task(message.download(file_name=Paths.THMB_PATH)) 
+        await th_set
+        BOT.Setting.thumbnail = True
+        if BOT.State.task_going and MSG.status_msg:
+            await MSG.status_msg.edit_media(
+                InputMediaPhoto(Paths.THMB_PATH), reply_markup=keyboard()
             )
+        return True
+    except Exception as e:
+        BOT.Setting.thumbnail = False
+        logging.info(f"Error Downloading Thumbnail: {e}")
+        return False
 
 
-async def SendLogs(is_leech: bool):
-    global Transfer, Messages
-    final_text = f"<b>☘️ File Count:</b>  <code>{len(Transfer.sent_file)}</code>\n\n<b>📜 Logs:</b>\n"
-    l_ink = "⌬─────[「 Colab Usage 」](https://colab.research.google.com/drive/12hdEqaidRZ8krqj7rpnyDzg1dkKmvdvp)─────⌬"
+def isYtdlComplete():
+    for _d, _, filenames in os.walk(Paths.down_path):
+        for f in filenames:
+            __, ext = ospath.splitext(f)
+            if ext in [".part", ".ytdl"]:
+                return False
+    return True
 
-    if is_leech:
-        file_count = (
-            f"├<b>☘️ File Count » </b><code>{len(Transfer.sent_file)} Files</code>\n"
-        )
+
+def convertIMG(image_path):
+    image = Image.open(image_path)
+    if image.mode != "RGB":
+        image = image.convert("RGB")
+    output_path = ospath.splitext(image_path)[0] + ".jpg"
+    image.save(output_path, "JPEG")
+    os.remove(image_path)
+    return output_path
+
+
+def sysINFO():
+    ram_usage = psutil.Process(os.getpid()).memory_info().rss
+    disk_usage = psutil.disk_usage("/")
+    cpu_usage_percent = psutil.cpu_percent()
+
+    string = "\n\n⌬─────「 Colab Usage 」─────⌬\n"
+    string += f"\n╭🖥️ **CPU Usage »**  __{cpu_usage_percent}%__"
+    string += f"\n├💽 **RAM Usage »**  __{sizeUnit(ram_usage)}__"
+    string += f"\n╰💾 **DISK Free »**  __{sizeUnit(disk_usage.free)}__"
+    string += Messages.caution_msg
+
+    return string
+
+
+def multipartArchive(path: str, type: str, remove: bool):
+    dirname, filename = ospath.split(path)
+    name, _ = ospath.splitext(filename)
+
+    c, size, rname = 1, 0, name
+    if type == "rar":
+        name_, _ = ospath.splitext(name)
+        rname = name_
+        na_p = name_ + ".part" + str(c) + ".rar"
+        p_ap = ospath.join(dirname, na_p)
+        while ospath.exists(p_ap):
+            if remove:
+                os.remove(p_ap)
+            size += getSize(p_ap)
+            c += 1
+            na_p = name_ + ".part" + str(c) + ".rar"
+            p_ap = ospath.join(dirname, na_p)
+
+    elif type == "7z":
+        na_p = name + "." + str(c).zfill(3)
+        p_ap = ospath.join(dirname, na_p)
+        while ospath.exists(p_ap):
+            if remove:
+                os.remove(p_ap)
+            size += getSize(p_ap)
+            c += 1
+            na_p = name + "." + str(c).zfill(3)
+            p_ap = ospath.join(dirname, na_p)
+
+    elif type == "zip":
+        na_p = name + ".zip"
+        p_ap = ospath.join(dirname, na_p)
+        if ospath.exists(p_ap):
+            if remove:
+                os.remove(p_ap)
+            size += getSize(p_ap)
+        na_p = name + ".z" + str(c).zfill(2)
+        p_ap = ospath.join(dirname, na_p)
+        while ospath.exists(p_ap):
+            if remove:
+                os.remove(p_ap)
+            size += getSize(p_ap)
+            c += 1
+            na_p = name + ".z" + str(c).zfill(2)
+            p_ap = ospath.join(dirname, na_p)
+
+        if rname.endswith(".zip"): # When the Archive was file.zip.001
+            rname, _ = ospath.splitext(rname)
+
+    return rname, size
+
+
+def isTimeOver():
+    global BotTimes
+    ten_sec_passed = time() - BotTimes.current_time >= 3
+    if ten_sec_passed:
+        BotTimes.current_time = time()
+    return ten_sec_passed
+
+
+def applyCustomName():
+    if len(BOT.Options.custom_name) != 0 and BOT.Mode.type not in ["zip", "undzip"]:
+        files = os.listdir(Paths.down_path)
+        for file_ in files:
+            current_name = ospath.join(Paths.down_path, file_)
+            new_name = ospath.join(Paths.down_path, BOT.Options.custom_name)
+            os.rename(current_name, new_name)
+
+
+def speedETA(start, done, total):
+    percentage = (done / total) * 100
+    percentage = 100 if percentage > 100 else percentage
+    elapsed_time = (datetime.now() - start).seconds
+    if done > 0 and elapsed_time != 0:
+        raw_speed = done / elapsed_time
+        speed = f"{sizeUnit(raw_speed)}/s"
+        eta = (total - done) / raw_speed
     else:
-        file_count = ""
+        speed, eta = "N/A", 0
+    return speed, eta, percentage
 
-    size = (
-        sizeUnit(sum(Transfer.up_bytes))
-        if is_leech
-        else sizeUnit(Transfer.total_down_size)
+
+async def message_deleter(message1, message2):
+    try:
+        await message1.delete()
+    except Exception as e:
+        logging.error(f"MSG1 Delete Failed: {e}")
+    try:
+        await message2.delete()
+    except Exception as e:
+        logging.error(f"MSG2 Delete Failed: {e}")
+
+
+async def send_settings(client, message, msg_id, command: bool):
+    up_mode = "document" if BOT.Options.stream_upload else "media"
+    keyboard = InlineKeyboardMarkup(
+        [
+            [
+                InlineKeyboardButton(
+                    f"Set {up_mode.capitalize()}", callback_data=up_mode
+                ),
+                InlineKeyboardButton("Video Settings", callback_data="video"),
+            ],
+            [
+                InlineKeyboardButton("Caption Font", callback_data="caption"),
+                InlineKeyboardButton("Thumbnail", callback_data="thumb"),
+            ],
+            [
+                InlineKeyboardButton("Set Suffix", callback_data="set-suffix"),
+                InlineKeyboardButton("Set Prefix", callback_data="set-prefix"),
+            ],
+            [InlineKeyboardButton("Close ✘", callback_data="close")],
+        ]
     )
+    text = "**CURRENT BOT SETTINGS ⚙️ »**"
+    text += f"\n\n╭⌬ UPLOAD » <i>{BOT.Setting.stream_upload}</i>"
+    text += f"\n├⌬ SPLIT » <i>{BOT.Setting.split_video}</i>"
+    text += f"\n├⌬ CONVERT » <i>{BOT.Setting.convert_video}</i>"
+    text += f"\n├⌬ CAPTION » <i>{BOT.Setting.caption}</i>"
+    pr = "None" if BOT.Setting.prefix == "" else "Exists"
+    su = "None" if BOT.Setting.suffix == "" else "Exists"
+    thmb = "None" if not BOT.Setting.thumbnail else "Exists"
+    text += f"\n├⌬ PREFIX » <i>{pr}</i>\n├⌬ SUFFIX » <i>{su}</i>"
+    text += f"\n╰⌬ THUMBNAIL » <i>{thmb}</i>"
+    try:
+        if command:
+            await message.reply_text(text=text, reply_markup=keyboard)
+        else:
+            await colab_bot.edit_message_text(
+                chat_id=message.chat.id,
+                message_id=msg_id,
+                text=text,
+                reply_markup=keyboard,
+            )
+    except BadRequest as error:
+        logging.error(f"Same text not modified | {error}")
+    except Exception as error:
+        logging.error(f"Error Modifying message | {error}")
 
-    last_text = (
-        f"\n\n<b>#{(BOT.Mode.mode).upper()}_COMPLETE 🔥</b>\n\n"
-        + f"╭<b>📛 Name » </b><code>{Messages.download_name}</code>\n"
-        + f"├<b>📦 Size » </b><code>{size}</code>\n"
-        + file_count
-        + f"╰<b>🍃 Saved Time »</b> <code>{getTime((datetime.now() - BotTimes.start_time).seconds)}</code>"
+
+async def status_bar(down_msg, speed, percentage, eta, done, left, engine):
+    bar_length = 12
+    filled_length = int(percentage / 100 * bar_length)
+    bar = "█" * filled_length + "░" * (bar_length - filled_length)
+    text = (
+        f"\n╭「{bar}」 **»** __{percentage:.2f}%__\n├⚡️ **Speed »** __{speed}__\n├⚙️ **Engine »** __{engine}__"
+        + f"\n├⏳ **Time Left »** __{eta}__"
+        + f"\n├🍃 **Time Spent »** __{getTime((datetime.now() - BotTimes.start_time).seconds)}__"
+        + f"\n├✅ **Processed »** __{done}__\n╰📦 **Total Size »** __{left}__"
     )
+    try:
+        # Edit the message with updated progress information.
+        if isTimeOver():
+            await MSG.status_msg.edit_text(
+                text=Messages.task_msg + down_msg + text + sysINFO(),
+                disable_web_page_preview=True,
+                reply_markup=keyboard(),
+            )
+    except BadRequest as e:
+        logging.error(f"Same Status Not Modified: {str(e)}")
+    except Exception as e:
+        # Catch any exceptions that might occur while editing the message.
+        logging.error(f"Error Updating Status bar: {str(e)}")
 
-    if BOT.State.task_going:
-        await MSG.sent_msg.reply_text(
-            text=f"**SOURCE »** __[Here]({Messages.src_link})__" + last_text
-        )
-        await MSG.status_msg.edit_text(
-            text=Messages.task_msg + l_ink + last_text,
-            reply_markup=InlineKeyboardMarkup(
-                [
-                    [
-                        InlineKeyboardButton(
-                            "Git Repo 🪲",
-                            url="https://github.com/nguoiquanli/Telegram-ColabMirror",
-                        ),
-                    ],
-                    [
-                        InlineKeyboardButton(  # Opens a web URL
-                            "Channel 📣",
-                            url="https://t.me/Colab_Leecher",
-                        ),
-                        InlineKeyboardButton(  # Opens a web URL
-                            "Group 💬",
-                            url="https://t.me/Colab_Leecher_Discuss",
-                        ),
-                    ],
-                ]
-            ),
-        )
 
-        if is_leech:
-            try:
-                final_texts = []
-                for i in range(len(Transfer.sent_file)):
-                    file_link = (
-                        f"https://t.me/c/{Messages.link_p}/{Transfer.sent_file[i].id}"
-                    )
-                    fileName = Transfer.sent_file_names[i]
-                    fileText = (
-                        f"\n({str(i+1).zfill(2)}) <a href={file_link}>{fileName}</a>"
-                    )
-                    if len(final_text + fileText) >= 4096:
-                        final_texts.append(final_text)
-                        final_text = fileText
-                    else:
-                        final_text += fileText
-                final_texts.append(final_text)
-
-                for fn_txt in final_texts:
-                    MSG.status_msg = await MSG.status_msg.reply_text(text=fn_txt)
-            except Exception as e:
-                Err = f"<b>Error Sending logs » </b><i>{e}</i>"
-                Err += f"\n\n<i>⚠️ If You are Unknown with this **ERROR**, Then Forward This Message in [Colab Leecher Discussion](https://t.me/Colab_Leecher_Discuss) Where [Xron Trix](https://t.me/XronTrix) may fix it</i>"
-                await MSG.status_msg.reply_text(text=Err)
-
-    BOT.State.started = False
-    BOT.State.task_going = False
+def keyboard():
+    return InlineKeyboardMarkup(
+        [
+            [InlineKeyboardButton("Cancel ❌", callback_data="cancel")],
+        ]
+    )

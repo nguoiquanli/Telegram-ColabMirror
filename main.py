@@ -85,8 +85,8 @@ with open('/content/Telegram-ColabMirror/credentials.json', 'w') as file:
 
 Working = False
 
-#if os.path.exists("/content/Telegram-ColabMirror/my_bot.session"):
-#    os.remove("/content/Telegram-ColabMirror/my_bot.session") # Remove previous bot session
+if os.path.exists("/content/Telegram-ColabMirror/my_bot.session"):
+    os.remove("/content/Telegram-ColabMirror/my_bot.session") # Remove previous bot session
     
 print("\rStarting Bot....")
 

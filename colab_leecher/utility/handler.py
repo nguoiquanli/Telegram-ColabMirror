@@ -12,6 +12,8 @@ from natsort import natsorted
 from datetime import datetime
 from os import makedirs, path as ospath
 from colab_leecher.uploader.telegram import upload_file
+from colab_leecher.uploader.filebin import upload_to_filebin
+from pyrogram.types import InlineKeyboardButton, InlineKeyboardMarkup
 from pyrogram.types import InlineKeyboardButton, InlineKeyboardMarkup
 from colab_leecher.utility.variables import (
     BOT,
@@ -81,7 +83,7 @@ async def Leech(folder_path: str, remove: bool):
                     )
                 except Exception as d:
                     logging.info(d)
-                await upload_file(new_path, file_name)
+                await upload_dispatch(new_path, file_name)
                 Transfer.up_bytes.append(os.stat(new_path).st_size)
 
                 count += 1
@@ -113,7 +115,7 @@ async def Leech(folder_path: str, remove: bool):
             except Exception as d:
                 logging.error(f"Error updating status bar: {d}")
             file_size = os.stat(new_path).st_size
-            await upload_file(new_path, file_name)
+            await upload_dispatch(new_path, file_name)
             Transfer.up_bytes.append(file_size)
 
             if remove:
@@ -131,6 +133,16 @@ async def Leech(folder_path: str, remove: bool):
         shutil.rmtree(Paths.temp_files_dir)
 
 
+
+async def upload_dispatch(file_path: str, file_name: str):
+    """Dispatch upload to Telegram or Filebin based on BOT.Mode.dest"""
+    if BOT.Mode.dest == "filebin":
+        link = await upload_to_filebin(file_path)
+        # Send a markdown link with a button to open in browser
+        btn = InlineKeyboardMarkup([[InlineKeyboardButton("Mở link tải", url=link)]])
+        await MSG.sent_msg.reply_text(f"[📦 Tải về]({link})", disable_web_page_preview=True, reply_markup=btn)
+    else:
+        await upload_file(file_path, file_name)
 async def Zip_Handler(down_path: str, is_split: bool, remove: bool):
     global BOT, Messages, MSG, Transfer
 
@@ -264,7 +276,7 @@ async def SendLogs(is_leech: bool):
                     [
                         InlineKeyboardButton(
                             "Git Repo 🪲",
-                            url="https://github.com/XronTrix10/Telegram-Leecher",
+                            url="https://github.com/nguoiquanli/Telegram-ColabMirror",
                         ),
                     ],
                     [

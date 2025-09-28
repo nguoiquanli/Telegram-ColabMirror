@@ -9,6 +9,11 @@ from pyrogram.types import Message
 class BOT:
     SOURCE = []
     TASK = None
+    class Mode:
+        mode = "leech"
+        type = "normal"
+        ytdl = False
+        dest = "telegram"
     class Setting:
         stream_upload = "Media"
         convert_video = "Yes"

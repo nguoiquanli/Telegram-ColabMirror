@@ -93,11 +93,8 @@ async def ytd_command(client, message):
 
 @colab_bot.on_message(filters.command("settings") & filters.group)
 async def settings(client, message):
-    if message.chat.id == OWNER:
-        await message.delete()
-        await send_settings(client, message, message.id, True)
-
-
+    await message.delete()
+    await send_settings(client, message, message.id, True)
 @colab_bot.on_message(filters.reply & filters.group)
 async def setPrefix(client, message):
     global BOT, SETTING

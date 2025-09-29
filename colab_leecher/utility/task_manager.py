@@ -153,19 +153,28 @@ async def taskScheduler():
             await MSG.status_msg.delete()
     except Exception:
         pass
-    img = Paths.THMB_PATH if ospath.exists(Paths.THMB_PATH) else Paths.HERO_IMAGE
-    MSG.status_msg = await colab_bot.send_photo(  # type: ignore
-        chat_id=OWNER,
-        photo=img,
-        caption=Messages.task_msg
+    
+    img_candidates = [Paths.THMB_PATH, Paths.HERO_IMAGE]
+    img = next((p for p in img_candidates if ospath.exists(p)), None)
+    caption_txt = (
+        Messages.task_msg
         + Messages.status_head
-        + f"\n📝 __Starting DOWNLOAD...__"
-        + sysINFO(),
-        reply_markup=keyboard(),
+        + "\n📝 __Starting DOWNLOAD...__"
+        + sysINFO()
     )
-
-    await calDownSize(BOT.SOURCE)
-
+    if img:
+        MSG.status_msg = await colab_bot.send_photo(  # type: ignore
+            chat_id=OWNER,
+            photo=img,
+            caption=caption_txt,
+            reply_markup=keyboard(),
+        )
+    else:
+        MSG.status_msg = await colab_bot.send_message(  # type: ignore
+            chat_id=OWNER,
+            text=caption_txt,
+            reply_markup=keyboard(),
+        )
     if not is_dir:
         await get_d_name(BOT.SOURCE[0])
     else:
